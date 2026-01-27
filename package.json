@@ -10,7 +10,7 @@
     "start": "node dist/server.js",
     "test": "vitest run",
     "copy-files": "cp -r src/views dist/ 2>/dev/null || true && cp -r src/public dist/ 2>/dev/null || true",
-    "render-build": "npm install --omit=dev && npm run build",
+    "render-build": "npm ci --include=dev && npm run build",
     "dev:watch": "ts-node-dev --respawn --transpile-only src/server.ts"
   },
   "dependencies": {
