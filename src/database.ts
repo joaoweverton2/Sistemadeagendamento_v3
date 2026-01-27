@@ -1,10 +1,8 @@
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-// __dirname removido pois não está sendo usado
+// Remover import não necessário para o __filename
+// import { fileURLToPath } from 'url';
 
 const dbPath = path.join(path.join(process.cwd(), 'data', 'agendamentos.db'));
 

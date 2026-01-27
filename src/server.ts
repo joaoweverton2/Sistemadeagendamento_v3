@@ -23,9 +23,9 @@ app.get('/api/bookings', (_req: Request, res: Response) => {
         (err: any, rows: any) => {
             if (err) {
                 res.status(500).json({ error: err.message });
-            } else {
-                res.json(rows || []);
+                return;
             }
+            res.json(rows || []);
         }
     );
 });
@@ -35,7 +35,8 @@ app.post('/api/bookings', (req: Request, res: Response) => {
     const { city_id, company_name, vehicle_plate, invoice_number, driver_name, booking_date, booking_time } = req.body;
 
     if (!city_id || !company_name || !vehicle_plate || !invoice_number || !driver_name || !booking_date || !booking_time) {
-        return res.status(400).json({ error: 'Campos obrigatórios faltando' });
+        res.status(400).json({ error: 'Campos obrigatórios faltando' });
+        return;
     }
 
     db.run(
@@ -45,24 +46,25 @@ app.post('/api/bookings', (req: Request, res: Response) => {
         function(err: any) {
             if (err) {
                 res.status(500).json({ error: err.message });
-            } else {
-                const bookingId = this.lastID;
-                res.json({ id: bookingId, status: 'confirmed' });
+                return;
+            }
+            
+            const bookingId = this.lastID;
+            res.json({ id: bookingId, status: 'confirmed' });
 
-                // Sincronizar com Google Sheets se disponível
-                if (sheetsService) {
-                    db.get(
-                        `SELECT b.*, c.name as city FROM bookings b 
-                         JOIN cities c ON b.city_id = c.id 
-                         WHERE b.id = ?`,
-                        [bookingId],
-                        (err, row) => {
-                            if (!err && row) {
-                                sheetsService.appendBooking(row);
-                            }
+            // Sincronizar com Google Sheets se disponível
+            if (sheetsService) {
+                db.get(
+                    `SELECT b.*, c.name as city FROM bookings b 
+                     JOIN cities c ON b.city_id = c.id 
+                     WHERE b.id = ?`,
+                    [bookingId],
+                    (err: any, row: any) => {
+                        if (!err && row) {
+                            sheetsService.appendBooking(row);
                         }
-                    );
-                }
+                    }
+                );
             }
         }
     );
@@ -80,11 +82,15 @@ app.get('/api/bookings/:id', (req: Request, res: Response) => {
         (err: any, row: any) => {
             if (err) {
                 res.status(500).json({ error: err.message });
-            } else if (!row) {
-                res.status(404).json({ error: 'Agendamento não encontrado' });
-            } else {
-                res.json(row);
+                return;
             }
+            
+            if (!row) {
+                res.status(404).json({ error: 'Agendamento não encontrado' });
+                return;
+            }
+            
+            res.json(row);
         }
     );
 });
@@ -99,11 +105,15 @@ app.post('/api/bookings/:id/cancel', (req: Request, res: Response) => {
         function(err: any) {
             if (err) {
                 res.status(500).json({ error: err.message });
-            } else if (this.changes === 0) {
-                res.status(404).json({ error: 'Agendamento não encontrado' });
-            } else {
-                res.json({ message: 'Agendamento cancelado com sucesso' });
+                return;
             }
+            
+            if (this.changes === 0) {
+                res.status(404).json({ error: 'Agendamento não encontrado' });
+                return;
+            }
+            
+            res.json({ message: 'Agendamento cancelado com sucesso' });
         }
     );
 });
@@ -118,9 +128,9 @@ app.get('/api/cdl/unavailabilities/:city_id', (req: Request, res: Response) => {
         (err: any, rows: any) => {
             if (err) {
                 res.status(500).json({ error: err.message });
-            } else {
-                res.json(rows || []);
+                return;
             }
+            res.json(rows || []);
         }
     );
 });
@@ -131,11 +141,13 @@ app.post('/api/cdl/unavailability', (req: Request, res: Response) => {
 
     // Validar PIN (padrão: 1235)
     if (pin !== '1235') {
-        return res.status(401).json({ error: 'PIN inválido' });
+        res.status(401).json({ error: 'PIN inválido' });
+        return;
     }
 
     if (!city_id || !unavailable_date || !reason) {
-        return res.status(400).json({ error: 'Campos obrigatórios faltando' });
+        res.status(400).json({ error: 'Campos obrigatórios faltando' });
+        return;
     }
 
     db.run(
@@ -145,18 +157,19 @@ app.post('/api/cdl/unavailability', (req: Request, res: Response) => {
         function(err: any) {
             if (err) {
                 res.status(500).json({ error: err.message });
-            } else {
-                res.json({ message: 'Indisponibilidade registrada com sucesso', id: this.lastID });
-                
-                // Sincronizar com Google Sheets se disponível
-                if (sheetsService) {
-                    sheetsService.appendUnavailability({
-                        city_id,
-                        unavailable_date,
-                        unavailable_time,
-                        reason
-                    });
-                }
+                return;
+            }
+            
+            res.json({ message: 'Indisponibilidade registrada com sucesso', id: this.lastID });
+            
+            // Sincronizar com Google Sheets se disponível
+            if (sheetsService) {
+                sheetsService.appendUnavailability({
+                    city_id,
+                    unavailable_date,
+                    unavailable_time,
+                    reason
+                });
             }
         }
     );
@@ -167,9 +180,9 @@ app.get('/api/cities', (_req: Request, res: Response) => {
     db.all(`SELECT * FROM cities ORDER BY state, name`, (err: any, rows: any) => {
         if (err) {
             res.status(500).json({ error: err.message });
-        } else {
-            res.json(rows || []);
+            return;
         }
+        res.json(rows || []);
     });
 });
 
