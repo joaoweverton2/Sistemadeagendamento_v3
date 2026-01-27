@@ -39,7 +39,7 @@ export class GoogleSheetsService {
 
             await sheets.spreadsheets.values.append({
                 spreadsheetId: this.config.spreadsheetId,
-                range: 'Agendamentos!A:J',
+                range: 'Agendamentos!A1:J1', // CORRIGIDO: Adicionado número da linha
                 valueInputOption: 'RAW',
                 requestBody: { values },
             });
@@ -64,7 +64,7 @@ export class GoogleSheetsService {
 
             await sheets.spreadsheets.values.append({
                 spreadsheetId: this.config.spreadsheetId,
-                range: 'Indisponibilidades!A:E',
+                range: 'Indisponibilidades!A1:E1', // CORRIGIDO: Adicionado número da linha
                 valueInputOption: 'RAW',
                 requestBody: { values },
             });
