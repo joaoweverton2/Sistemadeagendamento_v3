@@ -15,7 +15,7 @@ const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, '../public')));
 
 // GET /api/bookings - Listar todos os agendamentos
-app.get('/api/bookings', (req: Request, res: Response) => {
+app.get('/api/bookings', (_req: Request, res: Response) => {
     db.all(
         `SELECT b.*, c.name as city FROM bookings b 
          JOIN cities c ON b.city_id = c.id 
@@ -163,7 +163,7 @@ app.post('/api/cdl/unavailability', (req: Request, res: Response) => {
 });
 
 // GET /api/cities - Listar todas as cidades
-app.get('/api/cities', (req: Request, res: Response) => {
+app.get('/api/cities', (_req: Request, res: Response) => {
     db.all(`SELECT * FROM cities ORDER BY state, name`, (err: any, rows: any) => {
         if (err) {
             res.status(500).json({ error: err.message });
@@ -174,8 +174,13 @@ app.get('/api/cities', (req: Request, res: Response) => {
 });
 
 // GET /api/health - Health check
-app.get('/api/health', (req: Request, res: Response) => {
+app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Rota para servir o frontend
+app.get('*', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
 // Iniciar servidor

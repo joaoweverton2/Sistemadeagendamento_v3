@@ -1,5 +1,4 @@
 import { google } from 'googleapis';
-import { GoogleAuth } from 'google-auth-library';
 import fs from 'fs';
 import path from 'path';
 

@@ -4,7 +4,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// __dirname removido pois não está sendo usado
 
 const dbPath = path.join(path.join(process.cwd(), 'data', 'agendamentos.db'));
 
