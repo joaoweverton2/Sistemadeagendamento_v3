@@ -72,9 +72,71 @@ export class GoogleSheetsService {
                 requestBody: { values },
             });
             
-            console.log(`📊 Agendamento sincronizado com Google Sheets (aba: ${sheetName})`);
+            console.log(`📊 Agendamento ${booking.id} adicionado ao Google Sheets`);
         } catch (error) {
             console.error('❌ Erro ao sincronizar agendamento com Google Sheets:', error);
+        }
+    }
+
+    async updateBooking(booking: any): Promise<void> {
+        try {
+            const sheetName = this.config.bookingsSheetName;
+            
+            // Primeiro, encontrar a linha onde está este agendamento
+            const response = await this.sheets.spreadsheets.values.get({
+                spreadsheetId: this.config.spreadsheetId,
+                range: `${sheetName}!A:A`, // Buscar apenas a coluna de IDs
+            });
+
+            if (!response.data.values) {
+                console.log(`📭 Planilha ${sheetName} está vazia`);
+                // Se não encontrou, adiciona como novo
+                await this.appendBooking(booking);
+                return;
+            }
+
+            // Encontrar a linha do agendamento (ID está na coluna A)
+            let rowIndex = -1;
+            for (let i = 0; i < response.data.values.length; i++) {
+                if (response.data.values[i][0] == booking.id) { // Comparar como string
+                    rowIndex = i + 1; // +1 porque as linhas no Sheets começam em 1
+                    break;
+                }
+            }
+
+            if (rowIndex === -1) {
+                console.log(`⚠️ Agendamento ${booking.id} não encontrado na planilha`);
+                // Se não encontrou, adiciona como novo
+                await this.appendBooking(booking);
+                return;
+            }
+
+            // Atualizar a linha encontrada
+            const values = [
+                [
+                    booking.id,
+                    booking.company_name,
+                    booking.vehicle_plate,
+                    booking.invoice_number,
+                    booking.driver_name,
+                    booking.booking_date,
+                    booking.booking_time,
+                    booking.city || '',
+                    booking.status || 'confirmed',
+                    booking.updated_at || new Date().toISOString()
+                ]
+            ];
+
+            await this.sheets.spreadsheets.values.update({
+                spreadsheetId: this.config.spreadsheetId,
+                range: `${sheetName}!A${rowIndex}:J${rowIndex}`,
+                valueInputOption: 'RAW',
+                requestBody: { values },
+            });
+            
+            console.log(`📝 Agendamento ${booking.id} atualizado no Google Sheets (linha ${rowIndex})`);
+        } catch (error) {
+            console.error('❌ Erro ao atualizar agendamento no Google Sheets:', error);
         }
     }
 
@@ -94,13 +156,11 @@ export class GoogleSheetsService {
             const sheetName = this.config.unavailabilitiesSheetName;
             await this.ensureSheetExists(sheetName);
             
-            // Verificar se há cabeçalhos (6 colunas agora)
             const response = await this.sheets.spreadsheets.values.get({
                 spreadsheetId: this.config.spreadsheetId,
                 range: `${sheetName}!A1:F1`,
             });
 
-            // Se não há dados, adicionar cabeçalhos
             if (!response.data.values || response.data.values.length === 0) {
                 const headers = [
                     ['Cidade ID', 'Cidade', 'Data Indisponível', 'Horário', 'Motivo', 'Data Registro']
@@ -114,7 +174,6 @@ export class GoogleSheetsService {
                 });
             }
 
-            // Adicionar os dados
             await this.sheets.spreadsheets.values.append({
                 spreadsheetId: this.config.spreadsheetId,
                 range: `${sheetName}!A:F`,
@@ -131,7 +190,6 @@ export class GoogleSheetsService {
 
     private async ensureSheetExists(sheetName: string): Promise<void> {
         try {
-            // Verificar abas existentes
             const spreadsheet = await this.sheets.spreadsheets.get({
                 spreadsheetId: this.config.spreadsheetId,
             });
@@ -142,7 +200,6 @@ export class GoogleSheetsService {
             );
 
             if (!sheetExists) {
-                // Criar nova aba
                 await this.sheets.spreadsheets.batchUpdate({
                     spreadsheetId: this.config.spreadsheetId,
                     requestBody: {

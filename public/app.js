@@ -472,31 +472,31 @@ function cancelBooking(bookingId) {
 }
 
 function editBooking(bookingId) {
-    if (confirm('Para alterar, o agendamento atual será excluído e você será redirecionado ao calendário para escolher um novo horário. Deseja continuar?')) {
-        fetch(`${API_URL}/bookings/${bookingId}/cancel`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reason: 'Alteração de agendamento' })
-        })
-        .then(res => res.json())
-        .then(data => {
-            showNotification('Agendamento anterior removido. Escolha o novo horário.', 'success');
-            // Limpar o campo de busca para resetar a visualização de agendamentos
-            document.getElementById('search-protocol').value = '';
-            // Recarregar agendamentos e atualizar o calendário
-            fetch(`${API_URL}/bookings`)
-                .then(res => res.json())
-                .then(bookings => {
-                    state.currentBookings = bookings;
-                    renderBookings(bookings);
-                    renderCalendar(); // Libera o horário no calendário
-                    goBackToCalendar();
-                });
-        })
-        .catch(err => {
-            console.error(err);
-            showNotification('Erro ao processar alteração', 'error');
-        });
+    // Encontrar o agendamento na lista
+    const booking = state.currentBookings.find(b => b.id == bookingId);
+    if (!booking) return;
+    
+    if (confirm('Você será redirecionado para criar um novo agendamento. O antigo será mantido como histórico. Deseja continuar?')) {
+        // Preencher o formulário com os dados atuais
+        document.getElementById('company-name').value = booking.company_name;
+        document.getElementById('vehicle-plate').value = booking.vehicle_plate;
+        document.getElementById('invoice-number').value = booking.invoice_number;
+        document.getElementById('driver-name').value = booking.driver_name;
+        
+        // Ir para o calendário
+        goBackToCalendar();
+        // Selecionar o estado correspondente
+        const stateSelect = document.getElementById('state-select');
+        // Encontrar a chave do estado baseado no city_id ou nome da cidade
+        const cityKey = Object.keys(CITIES).find(key => 
+            CITIES[key].id == booking.city_id || CITIES[key].name == booking.city
+        );
+        if (cityKey) {
+            stateSelect.value = cityKey;
+            onStateChange();
+        }
+        
+        showNotification('Preencha os dados e selecione um novo horário. O agendamento antigo será mantido como histórico.', 'info');
     }
 }
 

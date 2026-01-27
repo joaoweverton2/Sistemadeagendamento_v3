@@ -98,22 +98,139 @@ app.get('/api/bookings/:id', (req: Request, res: Response) => {
 // POST /api/bookings/:id/cancel - Cancelar agendamento
 app.post('/api/bookings/:id/cancel', (req: Request, res: Response) => {
     const { id } = req.params;
+    const { reason } = req.body;
 
-    db.run(
-        `UPDATE bookings SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    // Primeiro buscar o agendamento atual
+    db.get(
+        `SELECT b.*, c.name as city FROM bookings b 
+         JOIN cities c ON b.city_id = c.id 
+         WHERE b.id = ?`,
         [id],
-        function(err: any) {
+        (err: any, booking: any) => {
             if (err) {
                 res.status(500).json({ error: err.message });
                 return;
             }
             
-            if (this.changes === 0) {
+            if (!booking) {
                 res.status(404).json({ error: 'Agendamento não encontrado' });
                 return;
             }
+
+            // Atualizar no banco de dados
+            db.run(
+                `UPDATE bookings SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                [id],
+                function(err: any) {
+                    if (err) {
+                        res.status(500).json({ error: err.message });
+                        return;
+                    }
+                    
+                    if (this.changes === 0) {
+                        res.status(404).json({ error: 'Agendamento não encontrado' });
+                        return;
+                    }
+                    
+                    // Buscar o agendamento atualizado
+                    db.get(
+                        `SELECT b.*, c.name as city FROM bookings b 
+                         JOIN cities c ON b.city_id = c.id 
+                         WHERE b.id = ?`,
+                        [id],
+                        (err: any, updatedBooking: any) => {
+                            if (!err && updatedBooking) {
+                                // Atualizar no Google Sheets
+                                if (sheetsService) {
+                                    sheetsService.updateBooking(updatedBooking);
+                                }
+                            }
+                            
+                            res.json({ 
+                                message: 'Agendamento cancelado com sucesso',
+                                reason: reason || 'Cancelado pelo fornecedor'
+                            });
+                        }
+                    );
+                }
+            );
+        }
+    );
+});
+
+// PUT /api/bookings/:id - Atualizar agendamento
+app.put('/api/bookings/:id', (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { city_id, company_name, vehicle_plate, invoice_number, driver_name, booking_date, booking_time } = req.body;
+
+    // Primeiro verificar se o agendamento existe
+    db.get(
+        `SELECT * FROM bookings WHERE id = ?`,
+        [id],
+        (err: any, existingBooking: any) => {
+            if (err) {
+                res.status(500).json({ error: err.message });
+                return;
+            }
             
-            res.json({ message: 'Agendamento cancelado com sucesso' });
+            if (!existingBooking) {
+                res.status(404).json({ error: 'Agendamento não encontrado' });
+                return;
+            }
+
+            // Atualizar no banco de dados
+            db.run(
+                `UPDATE bookings SET 
+                    city_id = COALESCE(?, city_id),
+                    company_name = COALESCE(?, company_name),
+                    vehicle_plate = COALESCE(?, vehicle_plate),
+                    invoice_number = COALESCE(?, invoice_number),
+                    driver_name = COALESCE(?, driver_name),
+                    booking_date = COALESCE(?, booking_date),
+                    booking_time = COALESCE(?, booking_time),
+                    updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?`,
+                [
+                    city_id, company_name, vehicle_plate, invoice_number, 
+                    driver_name, booking_date, booking_time, id
+                ],
+                function(err: any) {
+                    if (err) {
+                        res.status(500).json({ error: err.message });
+                        return;
+                    }
+                    
+                    if (this.changes === 0) {
+                        res.status(404).json({ error: 'Agendamento não encontrado' });
+                        return;
+                    }
+                    
+                    // Buscar o agendamento atualizado com nome da cidade
+                    db.get(
+                        `SELECT b.*, c.name as city FROM bookings b 
+                         JOIN cities c ON b.city_id = c.id 
+                         WHERE b.id = ?`,
+                        [id],
+                        (err: any, updatedBooking: any) => {
+                            if (!err && updatedBooking) {
+                                // Atualizar no Google Sheets
+                                if (sheetsService) {
+                                    sheetsService.updateBooking(updatedBooking);
+                                }
+                                
+                                res.json({ 
+                                    message: 'Agendamento atualizado com sucesso',
+                                    booking: updatedBooking
+                                });
+                            } else {
+                                res.json({ 
+                                    message: 'Agendamento atualizado com sucesso'
+                                });
+                            }
+                        }
+                    );
+                }
+            );
         }
     );
 });
