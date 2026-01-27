@@ -123,7 +123,9 @@ app.get('/api/cdl/unavailabilities/:city_id', (req: Request, res: Response) => {
     const { city_id } = req.params;
 
     db.all(
-        `SELECT * FROM unavailabilities WHERE city_id = ? ORDER BY unavailable_date DESC`,
+        `SELECT u.*, c.name as city_name FROM unavailabilities u 
+         JOIN cities c ON u.city_id = c.id 
+         WHERE u.city_id = ? ORDER BY u.unavailable_date DESC`,
         [city_id],
         (err: any, rows: any) => {
             if (err) {
@@ -150,27 +152,52 @@ app.post('/api/cdl/unavailability', (req: Request, res: Response) => {
         return;
     }
 
-    db.run(
-        `INSERT INTO unavailabilities (city_id, unavailable_date, unavailable_time, reason)
-         VALUES (?, ?, ?, ?)`,
-        [city_id, unavailable_date, unavailable_time || null, reason],
-        function(err: any) {
+    // Buscar o nome da cidade
+    db.get(
+        `SELECT name FROM cities WHERE id = ?`,
+        [city_id],
+        (err: any, cityRow: any) => {
             if (err) {
                 res.status(500).json({ error: err.message });
                 return;
             }
             
-            res.json({ message: 'Indisponibilidade registrada com sucesso', id: this.lastID });
-            
-            // Sincronizar com Google Sheets se disponível
-            if (sheetsService) {
-                sheetsService.appendUnavailability({
-                    city_id,
-                    unavailable_date,
-                    unavailable_time,
-                    reason
-                });
+            if (!cityRow) {
+                res.status(404).json({ error: 'Cidade não encontrada' });
+                return;
             }
+
+            const cityName = cityRow.name;
+
+            // Inserir a indisponibilidade
+            db.run(
+                `INSERT INTO unavailabilities (city_id, unavailable_date, unavailable_time, reason)
+                 VALUES (?, ?, ?, ?)`,
+                [city_id, unavailable_date, unavailable_time || null, reason],
+                function(err: any) {
+                    if (err) {
+                        res.status(500).json({ error: err.message });
+                        return;
+                    }
+                    
+                    const unavailabilityId = this.lastID;
+                    res.json({ 
+                        message: 'Indisponibilidade registrada com sucesso', 
+                        id: unavailabilityId 
+                    });
+                    
+                    // Sincronizar com Google Sheets se disponível
+                    if (sheetsService) {
+                        sheetsService.appendUnavailability({
+                            city_id,
+                            city_name: cityName,
+                            unavailable_date,
+                            unavailable_time: unavailable_time || 'Dia Inteiro',
+                            reason
+                        });
+                    }
+                }
+            );
         }
     );
 });

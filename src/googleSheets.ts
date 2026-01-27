@@ -5,11 +5,14 @@ import path from 'path';
 export interface GoogleSheetsConfig {
     spreadsheetId: string;
     credentialsPath: string;
+    bookingsSheetName: string;
+    unavailabilitiesSheetName: string;
 }
 
 export class GoogleSheetsService {
     private config: GoogleSheetsConfig;
     private auth: any;
+    private sheets: any;
 
     constructor(config: GoogleSheetsConfig) {
         this.config = config;
@@ -17,11 +20,11 @@ export class GoogleSheetsService {
             keyFile: config.credentialsPath,
             scopes: ['https://www.googleapis.com/auth/spreadsheets'],
         });
+        this.sheets = google.sheets({ version: 'v4', auth: this.auth as any });
     }
 
     async appendBooking(booking: any): Promise<void> {
         try {
-            const sheets = google.sheets({ version: 'v4', auth: this.auth as any });
             const values = [
                 [
                     booking.id,
@@ -37,13 +40,39 @@ export class GoogleSheetsService {
                 ]
             ];
 
-            await sheets.spreadsheets.values.append({
+            const sheetName = this.config.bookingsSheetName;
+            await this.ensureSheetExists(sheetName);
+            
+            // Verificar se há cabeçalhos
+            const response = await this.sheets.spreadsheets.values.get({
                 spreadsheetId: this.config.spreadsheetId,
-                range: 'Agendamentos!A1:J1', // CORRIGIDO: Adicionado número da linha
+                range: `${sheetName}!A1:J1`,
+            });
+
+            // Se não há dados, adicionar cabeçalhos
+            if (!response.data.values || response.data.values.length === 0) {
+                const headers = [
+                    ['ID', 'Empresa', 'Placa', 'Nota Fiscal', 'Motorista', 'Data', 'Hora', 'Cidade', 'Status', 'Data Criação']
+                ];
+                
+                await this.sheets.spreadsheets.values.update({
+                    spreadsheetId: this.config.spreadsheetId,
+                    range: `${sheetName}!A1:J1`,
+                    valueInputOption: 'RAW',
+                    requestBody: { values: headers },
+                });
+            }
+
+            // Adicionar os dados
+            await this.sheets.spreadsheets.values.append({
+                spreadsheetId: this.config.spreadsheetId,
+                range: `${sheetName}!A:J`,
                 valueInputOption: 'RAW',
+                insertDataOption: 'INSERT_ROWS',
                 requestBody: { values },
             });
-            console.log('📊 Agendamento sincronizado com Google Sheets');
+            
+            console.log(`📊 Agendamento sincronizado com Google Sheets (aba: ${sheetName})`);
         } catch (error) {
             console.error('❌ Erro ao sincronizar agendamento com Google Sheets:', error);
         }
@@ -51,10 +80,10 @@ export class GoogleSheetsService {
 
     async appendUnavailability(unavailability: any): Promise<void> {
         try {
-            const sheets = google.sheets({ version: 'v4', auth: this.auth as any });
             const values = [
                 [
                     unavailability.city_id,
+                    unavailability.city_name || 'Cidade não encontrada',
                     unavailability.unavailable_date,
                     unavailability.unavailable_time || 'Dia Inteiro',
                     unavailability.reason,
@@ -62,15 +91,74 @@ export class GoogleSheetsService {
                 ]
             ];
 
-            await sheets.spreadsheets.values.append({
+            const sheetName = this.config.unavailabilitiesSheetName;
+            await this.ensureSheetExists(sheetName);
+            
+            // Verificar se há cabeçalhos (6 colunas agora)
+            const response = await this.sheets.spreadsheets.values.get({
                 spreadsheetId: this.config.spreadsheetId,
-                range: 'Indisponibilidades!A1:E1', // CORRIGIDO: Adicionado número da linha
+                range: `${sheetName}!A1:F1`,
+            });
+
+            // Se não há dados, adicionar cabeçalhos
+            if (!response.data.values || response.data.values.length === 0) {
+                const headers = [
+                    ['Cidade ID', 'Cidade', 'Data Indisponível', 'Horário', 'Motivo', 'Data Registro']
+                ];
+                
+                await this.sheets.spreadsheets.values.update({
+                    spreadsheetId: this.config.spreadsheetId,
+                    range: `${sheetName}!A1:F1`,
+                    valueInputOption: 'RAW',
+                    requestBody: { values: headers },
+                });
+            }
+
+            // Adicionar os dados
+            await this.sheets.spreadsheets.values.append({
+                spreadsheetId: this.config.spreadsheetId,
+                range: `${sheetName}!A:F`,
                 valueInputOption: 'RAW',
+                insertDataOption: 'INSERT_ROWS',
                 requestBody: { values },
             });
-            console.log('📊 Indisponibilidade sincronizada com Google Sheets');
+            
+            console.log(`📊 Indisponibilidade sincronizada com Google Sheets (aba: ${sheetName})`);
         } catch (error) {
             console.error('❌ Erro ao sincronizar indisponibilidade com Google Sheets:', error);
+        }
+    }
+
+    private async ensureSheetExists(sheetName: string): Promise<void> {
+        try {
+            // Verificar abas existentes
+            const spreadsheet = await this.sheets.spreadsheets.get({
+                spreadsheetId: this.config.spreadsheetId,
+            });
+
+            const sheets = spreadsheet.data.sheets;
+            const sheetExists = sheets.some((sheet: any) => 
+                sheet.properties.title === sheetName
+            );
+
+            if (!sheetExists) {
+                // Criar nova aba
+                await this.sheets.spreadsheets.batchUpdate({
+                    spreadsheetId: this.config.spreadsheetId,
+                    requestBody: {
+                        requests: [{
+                            addSheet: {
+                                properties: {
+                                    title: sheetName
+                                }
+                            }
+                        }]
+                    }
+                });
+                console.log(`📄 Aba "${sheetName}" criada no Google Sheets`);
+            }
+        } catch (error) {
+            console.error(`❌ Erro ao verificar/criar aba ${sheetName}:`, error);
         }
     }
 }
@@ -78,6 +166,8 @@ export class GoogleSheetsService {
 export function initializeGoogleSheets(): GoogleSheetsService | null {
     const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
     const credentialsPath = process.env.GOOGLE_SHEETS_CREDENTIALS_PATH || './credentials.json';
+    const bookingsSheetName = process.env.GOOGLE_SHEETS_BOOKINGS_SHEET || 'Agendamentos';
+    const unavailabilitiesSheetName = process.env.GOOGLE_SHEETS_UNAVAILABILITIES_SHEET || 'Indisponibilidades';
 
     if (!spreadsheetId) {
         console.log('⚠️  GOOGLE_SHEETS_SPREADSHEET_ID não configurado. Sincronização desabilitada.');
@@ -89,5 +179,14 @@ export function initializeGoogleSheets(): GoogleSheetsService | null {
         return null;
     }
 
-    return new GoogleSheetsService({ spreadsheetId, credentialsPath });
+    console.log(`✅ Google Sheets configurado. Planilha ID: ${spreadsheetId.substring(0, 10)}...`);
+    console.log(`📄 Aba de agendamentos: ${bookingsSheetName}`);
+    console.log(`📄 Aba de indisponibilidades: ${unavailabilitiesSheetName}`);
+    
+    return new GoogleSheetsService({ 
+        spreadsheetId, 
+        credentialsPath,
+        bookingsSheetName,
+        unavailabilitiesSheetName
+    });
 }
