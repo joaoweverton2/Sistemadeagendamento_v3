@@ -342,7 +342,7 @@ async function restoreUnavailabilitiesFromSheets(sheetsService: GoogleSheetsServ
 }
 
 // Função principal para restaurar do Google Sheets
-export async function restoreFromGoogleSheets(sheetsService: GoogleSheetsService | null): Promise<void> {
+async function restoreFromGoogleSheetsInternal(sheetsService: GoogleSheetsService | null): Promise<void> {
     return new Promise((resolve, reject) => {
         if (!sheetsService) {
             console.log('⚠️  Google Sheets não disponível para restauração');
@@ -395,7 +395,7 @@ export async function restoreFromGoogleSheets(sheetsService: GoogleSheetsService
 }
 
 // Função para forçar sincronização manual
-export async function forceSyncFromGoogleSheets(sheetsService: GoogleSheetsService | null): Promise<void> {
+async function forceSyncFromGoogleSheetsInternal(sheetsService: GoogleSheetsService | null): Promise<void> {
     if (!sheetsService) {
         throw new Error('Google Sheets não disponível');
     }
@@ -408,4 +408,7 @@ export async function forceSyncFromGoogleSheets(sheetsService: GoogleSheetsServi
 
 // Exportar db e as funções
 export default db;
-export { restoreFromGoogleSheets, forceSyncFromGoogleSheets };
+export { 
+    restoreFromGoogleSheetsInternal as restoreFromGoogleSheets, 
+    forceSyncFromGoogleSheetsInternal as forceSyncFromGoogleSheets 
+};

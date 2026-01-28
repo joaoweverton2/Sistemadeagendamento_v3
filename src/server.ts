@@ -216,7 +216,12 @@ app.put('/api/bookings/:id', (req: Request, res: Response) => {
                          WHERE b.id = ?`,
                         [id],
                         (err: any, updatedBooking: any) => {
-                            if (!err && updatedBooking) {
+                            if (err) {
+                                res.status(500).json({ error: err.message });
+                                return;
+                            }
+                            
+                            if (updatedBooking) {
                                 // Atualizar no Google Sheets
                                 if (sheetsService) {
                                     sheetsService.updateBooking(updatedBooking);
@@ -503,7 +508,11 @@ app.get('/api/admin/health-detailed', (req: Request, res: Response) => {
     
     // Verificar banco de dados
     db.get('SELECT 1 as test', (err) => {
-        healthChecks.database = err ? 'error' : 'ok';
+        if (err) {
+            healthChecks.database = 'error';
+        } else {
+            healthChecks.database = 'ok';
+        }
         
         // Verificar Google Sheets
         if (!sheetsService) {
