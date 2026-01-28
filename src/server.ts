@@ -31,7 +31,7 @@ app.get('/api/bookings', (_req: Request, res: Response) => {
 });
 
 // POST /api/bookings - Criar novo agendamento
-app.post('/api/bookings', (req: Request, res: Response) => {
+app.post('/api/bookings', (req: Request, res: Response): void => {
     const { city_id, company_name, vehicle_plate, invoice_number, driver_name, booking_date, booking_time } = req.body;
 
     if (!city_id || !company_name || !vehicle_plate || !invoice_number || !driver_name || !booking_date || !booking_time) {
@@ -50,7 +50,8 @@ app.post('/api/bookings', (req: Request, res: Response) => {
             }
             
             const bookingId = this.lastID;
-            res.json({ id: bookingId, status: 'confirmed' });
+            const responseData = { id: bookingId, status: 'confirmed' };
+            res.json(responseData);
 
             // Sincronizar com Google Sheets se disponível
             if (sheetsService) {
@@ -163,7 +164,7 @@ app.post('/api/bookings/:id/cancel', (req: Request, res: Response) => {
 });
 
 // PUT /api/bookings/:id - Atualizar agendamento
-app.put('/api/bookings/:id', (req: Request, res: Response) => {
+app.put('/api/bookings/:id', (req: Request, res: Response): void => {
     const { id } = req.params;
     const { city_id, company_name, vehicle_plate, invoice_number, driver_name, booking_date, booking_time } = req.body;
 
@@ -352,7 +353,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 });
 
 // POST /api/admin/sync-sheets - Sincronizar manualmente com Google Sheets (PROTEGIDO)
-app.post('/api/admin/sync-sheets', (req: Request, res: Response) => {
+app.post('/api/admin/sync-sheets', (req: Request, res: Response): void => {
     const { admin_key } = req.body;
     
     // Chave de administração (configure no Render como ADMIN_SYNC_KEY)
@@ -490,7 +491,7 @@ app.get('/api/stats', (_req: Request, res: Response) => {
 });
 
 // GET /api/admin/health-detailed - Health check detalhado (PROTEGIDO)
-app.get('/api/admin/health-detailed', (req: Request, res: Response) => {
+app.get('/api/admin/health-detailed', (req: Request, res: Response): void => {
     const { key } = req.query;
     
     const expectedKey = process.env.ADMIN_SYNC_KEY;
@@ -536,7 +537,7 @@ app.get('/api/admin/health-detailed', (req: Request, res: Response) => {
         
         healthChecks.api = 'ok';
         
-        res.json({
+        const responseData = {
             success: true,
             status: 'operational',
             timestamp: new Date().toISOString(),
@@ -547,7 +548,9 @@ app.get('/api/admin/health-detailed', (req: Request, res: Response) => {
                 rss: Math.round(used.rss / 1024 / 1024) + 'MB',
                 ratio: Math.round(memoryRatio * 100) + '%'
             }
-        });
+        };
+        
+        res.json(responseData);
     });
 });
 
