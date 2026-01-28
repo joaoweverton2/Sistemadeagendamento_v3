@@ -217,6 +217,7 @@ app.put('/api/bookings/:id', (req: Request, res: Response) => {
                         [id],
                         (err: any, updatedBooking: any) => {
                             if (err) {
+                                console.error('Erro ao buscar agendamento atualizado:', err);
                                 res.status(500).json({ error: err.message });
                                 return;
                             }
@@ -358,17 +359,19 @@ app.post('/api/admin/sync-sheets', (req: Request, res: Response) => {
     const expectedKey = process.env.ADMIN_SYNC_KEY || 'admin-sync-123';
     
     if (admin_key !== expectedKey) {
-        return res.status(401).json({ 
+        res.status(401).json({ 
             error: 'Não autorizado',
             message: 'Chave de administração inválida'
         });
+        return;
     }
     
     if (!sheetsService) {
-        return res.status(400).json({ 
+        res.status(400).json({ 
             error: 'Google Sheets não configurado',
             message: 'Configure as variáveis GOOGLE_SHEETS_SPREADSHEET_ID e GOOGLE_SHEETS_CREDENTIALS_PATH'
         });
+        return;
     }
     
     console.log('🔄 Sincronização manual solicitada via API');
@@ -408,10 +411,11 @@ app.post('/api/admin/backup', (req: Request, res: Response) => {
     const expectedKey = process.env.ADMIN_SYNC_KEY || 'admin-sync-123';
     
     if (admin_key !== expectedKey) {
-        return res.status(401).json({ 
+        res.status(401).json({ 
             error: 'Não autorizado',
             message: 'Chave de administração inválida'
         });
+        return;
     }
     
     // Contar registros atuais
@@ -492,10 +496,11 @@ app.get('/api/admin/health-detailed', (req: Request, res: Response) => {
     const expectedKey = process.env.ADMIN_SYNC_KEY;
     
     if (!expectedKey || key !== expectedKey) {
-        return res.status(401).json({ 
+        res.status(401).json({ 
             success: false,
             error: 'Não autorizado'
         });
+        return;
     }
     
     // Verificar saúde de todos os componentes
