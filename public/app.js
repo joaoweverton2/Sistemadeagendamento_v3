@@ -472,31 +472,48 @@ function cancelBooking(bookingId) {
 }
 
 function editBooking(bookingId) {
-    // Encontrar o agendamento na lista
-    const booking = state.currentBookings.find(b => b.id == bookingId);
-    if (!booking) return;
-    
-    if (confirm('Você será redirecionado para criar um novo agendamento. O antigo será mantido como histórico. Deseja continuar?')) {
-        // Preencher o formulário com os dados atuais
-        document.getElementById('company-name').value = booking.company_name;
-        document.getElementById('vehicle-plate').value = booking.vehicle_plate;
-        document.getElementById('invoice-number').value = booking.invoice_number;
-        document.getElementById('driver-name').value = booking.driver_name;
-        
-        // Ir para o calendário
-        goBackToCalendar();
-        // Selecionar o estado correspondente
-        const stateSelect = document.getElementById('state-select');
-        // Encontrar a chave do estado baseado no city_id ou nome da cidade
-        const cityKey = Object.keys(CITIES).find(key => 
-            CITIES[key].id == booking.city_id || CITIES[key].name == booking.city
-        );
-        if (cityKey) {
-            stateSelect.value = cityKey;
-            onStateChange();
-        }
-        
-        showNotification('Preencha os dados e selecione um novo horário. O agendamento antigo será mantido como histórico.', 'info');
+    if (confirm('Para alterar, você criará um novo agendamento. O agendamento atual será CANCELADO. Deseja continuar?')) {
+        // Primeiro, cancelar o agendamento atual
+        fetch(`${API_URL}/bookings/${bookingId}/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: 'Alteração para novo agendamento' })
+        })
+        .then(res => {
+            if (!res.ok) throw new Error('Erro ao cancelar agendamento');
+            return res.json();
+        })
+        .then(data => {
+            showNotification('Agendamento anterior cancelado. Agora crie o novo agendamento.', 'success');
+            
+            // Limpar campos do formulário caso haja dados antigos
+            document.getElementById('company-name').value = '';
+            document.getElementById('vehicle-plate').value = '';
+            document.getElementById('invoice-number').value = '';
+            document.getElementById('driver-name').value = '';
+            
+            // Limpar o campo de busca
+            document.getElementById('search-protocol').value = '';
+            
+            // Recarregar agendamentos para atualizar a lista
+            fetch(`${API_URL}/bookings`)
+                .then(res => res.json())
+                .then(bookings => {
+                    state.currentBookings = bookings;
+                    renderBookings(bookings);
+                    renderCalendar(); // Atualiza o calendário para liberar o horário
+                    
+                    // Ir para o calendário para criar novo agendamento
+                    setTimeout(() => {
+                        goBackToCalendar();
+                        showNotification('Selecione a nova data e horário para o agendamento.', 'info');
+                    }, 500);
+                });
+        })
+        .catch(err => {
+            console.error(err);
+            showNotification('Erro ao processar alteração', 'error');
+        });
     }
 }
 

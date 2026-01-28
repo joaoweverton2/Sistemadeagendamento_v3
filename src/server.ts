@@ -140,6 +140,9 @@ app.post('/api/bookings/:id/cancel', (req: Request, res: Response) => {
                         [id],
                         (err: any, updatedBooking: any) => {
                             if (!err && updatedBooking) {
+                                // Garantir que o status seja 'cancelled'
+                                updatedBooking.status = 'cancelled';
+                                
                                 // Atualizar no Google Sheets
                                 if (sheetsService) {
                                     sheetsService.updateBooking(updatedBooking);
@@ -148,7 +151,8 @@ app.post('/api/bookings/:id/cancel', (req: Request, res: Response) => {
                             
                             res.json({ 
                                 message: 'Agendamento cancelado com sucesso',
-                                reason: reason || 'Cancelado pelo fornecedor'
+                                reason: reason || 'Cancelado pelo fornecedor',
+                                status: 'cancelled'
                             });
                         }
                     );
