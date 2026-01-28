@@ -571,6 +571,9 @@ async function initializeServer() {
     try {
         console.log('🚀 Iniciando servidor de agendamento...');
         
+        // Pequena pausa para garantir que o banco seja inicializado primeiro
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
         // Se temos Google Sheets configurado, restaurar dados se necessário
         if (sheetsService) {
             console.log('🔄 Verificando sincronização com Google Sheets...');
@@ -584,7 +587,7 @@ async function initializeServer() {
         } else {
             console.log('⚠️  Google Sheets não configurado. Sincronização desabilitada.');
         }
-        
+              
         // Iniciar servidor
         app.listen(PORT, () => {
             const portNum = typeof PORT === 'string' ? parseInt(PORT) : PORT;
