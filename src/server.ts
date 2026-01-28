@@ -506,10 +506,11 @@ async function initializeServer() {
         
         // Iniciar servidor
         app.listen(PORT, () => {
+            const portPadding = PORT < 1000 ? ' ' : '';
             console.log(`
 ╔════════════════════════════════════════════════════════════════════════╗
 ║  🚀 Servidor de Agendamento de Mercadorias                           ║
-║  Rodando em: http://localhost:${PORT}${PORT < 1000 ? ' ' : ''}               ║
+║  Rodando em: http://localhost:${PORT}${portPadding}                                ║
 ║  Banco de dados: SQLite                                               ║
 ║  Google Sheets: ${sheetsService ? '✅ Sincronizado' : '❌ Desabilitado'}    ║
 ║  Sincronização: ${sheetsService ? 'Bidirecional (inicialização)' : 'N/A'}  ║
