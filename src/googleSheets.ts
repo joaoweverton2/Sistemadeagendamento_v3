@@ -136,7 +136,8 @@ export class GoogleSheetsService {
                     booking.id,
                     booking.company_name,
                     booking.vehicle_plate,
-                    invoice_number, booking.driver_name,
+                    booking.invoice_number,
+                    booking.driver_name,
                     booking.booking_date,
                     booking.booking_time,
                     booking.city || '',
@@ -250,7 +251,7 @@ export function initializeGoogleSheets(): GoogleSheetsService | null {
     }
 
     if (!fs.existsSync(path.resolve(credentialsPath))) {
-        console.log(`⚠️  Arquivo de credenciais não encontrado em: ${credentialsPath}. Sincronização desabilitada.');
+        console.log(`⚠️  Arquivo de credenciais não encontrado em: ${credentialsPath}. Sincronização desabilitada.`);
         return null;
     }
 
