@@ -23,6 +23,25 @@ export class GoogleSheetsService {
         this.sheets = google.sheets({ version: 'v4', auth: this.auth as any });
     }
 
+    // Método público para acessar configuração
+    getConfig(): GoogleSheetsConfig {
+        return this.config;
+    }
+
+    // Método público para ler dados do Sheets
+    async getSheetsData(range: string): Promise<any> {
+        try {
+            const response = await this.sheets.spreadsheets.values.get({
+                spreadsheetId: this.config.spreadsheetId,
+                range,
+            });
+            return response.data;
+        } catch (error) {
+            console.error('❌ Erro ao ler dados do Google Sheets:', error);
+            throw error;
+        }
+    }
+
     async appendBooking(booking: any): Promise<void> {
         try {
             const values = [
@@ -117,8 +136,7 @@ export class GoogleSheetsService {
                     booking.id,
                     booking.company_name,
                     booking.vehicle_plate,
-                    booking.invoice_number,
-                    booking.driver_name,
+                    invoice_number, booking.driver_name,
                     booking.booking_date,
                     booking.booking_time,
                     booking.city || '',
@@ -232,7 +250,7 @@ export function initializeGoogleSheets(): GoogleSheetsService | null {
     }
 
     if (!fs.existsSync(path.resolve(credentialsPath))) {
-        console.log(`⚠️  Arquivo de credenciais não encontrado em: ${credentialsPath}. Sincronização desabilitada.`);
+        console.log(`⚠️  Arquivo de credenciais não encontrado em: ${credentialsPath}. Sincronização desabilitada.');
         return null;
     }
 

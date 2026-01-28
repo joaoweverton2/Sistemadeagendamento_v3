@@ -123,27 +123,23 @@ function getCityIdByName(cityName: string): Promise<number | null> {
 // Função para restaurar agendamentos do Google Sheets
 async function restoreBookingsFromSheets(sheetsService: GoogleSheetsService): Promise<void> {
     try {
-        const sheets = sheetsService.sheets;
-        const spreadsheetId = sheetsService.config.spreadsheetId;
-        const sheetName = sheetsService.config.bookingsSheetName;
+        const config = sheetsService.getConfig();
+        const sheetName = config.bookingsSheetName;
 
         // Ler dados da planilha (pular cabeçalho linha 1)
-        const response = await sheets.spreadsheets.values.get({
-            spreadsheetId,
-            range: `${sheetName}!A2:J`, // Pula cabeçalho
-        });
+        const response = await sheetsService.getSheetsData(`${sheetName}!A2:J`);
 
-        if (!response.data.values || response.data.values.length === 0) {
+        if (!response || !response.values || response.values.length === 0) {
             console.log('📭 Nenhum agendamento encontrado no Google Sheets');
             return;
         }
 
-        console.log(`📥 Encontrados ${response.data.values.length} agendamentos no Sheets`);
+        console.log(`📥 Encontrados ${response.values.length} agendamentos no Sheets`);
         
         let restoredCount = 0;
         let skippedCount = 0;
         
-        for (const row of response.data.values) {
+        for (const row of response.values) {
             // Formato: [ID, Empresa, Placa, NF, Motorista, Data, Hora, Cidade, Status, Data Criação]
             const [
                 id, company_name, vehicle_plate, invoice_number, 
@@ -250,28 +246,24 @@ async function restoreBookingsFromSheets(sheetsService: GoogleSheetsService): Pr
 // Função para restaurar indisponibilidades do Google Sheets
 async function restoreUnavailabilitiesFromSheets(sheetsService: GoogleSheetsService): Promise<void> {
     try {
-        const sheets = sheetsService.sheets;
-        const spreadsheetId = sheetsService.config.spreadsheetId;
-        const sheetName = sheetsService.config.unavailabilitiesSheetName;
+        const config = sheetsService.getConfig();
+        const sheetName = config.unavailabilitiesSheetName;
 
-        const response = await sheets.spreadsheets.values.get({
-            spreadsheetId,
-            range: `${sheetName}!A2:F`, // Pula cabeçalho
-        });
+        const response = await sheetsService.getSheetsData(`${sheetName}!A2:F`);
 
-        if (!response.data.values || response.data.values.length === 0) {
+        if (!response || !response.values || response.values.length === 0) {
             console.log('📭 Nenhuma indisponibilidade encontrada no Google Sheets');
             return;
         }
 
-        console.log(`📥 Encontradas ${response.data.values.length} indisponibilidades no Sheets`);
+        console.log(`📥 Encontradas ${response.values.length} indisponibilidades no Sheets`);
         
         let restoredCount = 0;
         let skippedCount = 0;
         
-        for (const row of response.data.values) {
+        for (const row of response.values) {
             // Formato: [Cidade ID, Cidade, Data Indisponível, Horário, Motivo, Data Registro]
-            const [city_id, city_name, unavailable_date, unavailable_time, reason, created_at] = row;
+            const [city_id, _city_name, unavailable_date, unavailable_time, reason, created_at] = row;
 
             if (!city_id || !unavailable_date) {
                 skippedCount++;
