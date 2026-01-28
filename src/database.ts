@@ -1,8 +1,7 @@
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import fs from 'fs';
-// Remover import não necessário para o __filename
-// import { fileURLToPath } from 'url';
+import { GoogleSheetsService } from './googleSheets.js';
 
 const dbPath = path.join(path.join(process.cwd(), 'data', 'agendamentos.db'));
 
@@ -87,4 +86,334 @@ function initializeDatabase() {
     });
 }
 
+// Função para buscar cidade pelo nome
+function getCityIdByName(cityName: string): Promise<number | null> {
+    return new Promise((resolve) => {
+        if (!cityName) {
+            resolve(null);
+            return;
+        }
+
+        // Buscar por nome exato
+        db.get(
+            'SELECT id FROM cities WHERE name = ?',
+            [cityName.trim()],
+            (err, row: any) => {
+                if (err || !row) {
+                    // Se não encontrar, tentar buscar por parte do nome
+                    db.get(
+                        'SELECT id FROM cities WHERE name LIKE ?',
+                        [`%${cityName.trim()}%`],
+                        (err2, row2: any) => {
+                            if (err2 || !row2) {
+                                resolve(null);
+                            } else {
+                                resolve(row2.id);
+                            }
+                        }
+                    );
+                } else {
+                    resolve(row.id);
+                }
+            }
+        );
+    });
+}
+
+// Função para restaurar agendamentos do Google Sheets
+async function restoreBookingsFromSheets(sheetsService: GoogleSheetsService): Promise<void> {
+    try {
+        const sheets = sheetsService.sheets;
+        const spreadsheetId = sheetsService.config.spreadsheetId;
+        const sheetName = sheetsService.config.bookingsSheetName;
+
+        // Ler dados da planilha (pular cabeçalho linha 1)
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: `${sheetName}!A2:J`, // Pula cabeçalho
+        });
+
+        if (!response.data.values || response.data.values.length === 0) {
+            console.log('📭 Nenhum agendamento encontrado no Google Sheets');
+            return;
+        }
+
+        console.log(`📥 Encontrados ${response.data.values.length} agendamentos no Sheets`);
+        
+        let restoredCount = 0;
+        let skippedCount = 0;
+        
+        for (const row of response.data.values) {
+            // Formato: [ID, Empresa, Placa, NF, Motorista, Data, Hora, Cidade, Status, Data Criação]
+            const [
+                id, company_name, vehicle_plate, invoice_number, 
+                driver_name, booking_date, booking_time, 
+                city_name, status, created_at
+            ] = row;
+
+            // Pular linhas vazias ou com dados incompletos
+            if (!id || !company_name || !booking_date) {
+                skippedCount++;
+                continue;
+            }
+
+            // Buscar city_id pelo nome da cidade
+            const cityId = await getCityIdByName(city_name);
+            
+            if (!cityId) {
+                console.log(`⚠️ Cidade "${city_name}" não encontrada. Pulando agendamento ${id}`);
+                skippedCount++;
+                continue;
+            }
+
+            // Verificar se o agendamento já existe
+            const exists = await new Promise<boolean>((resolve) => {
+                db.get(
+                    'SELECT id FROM bookings WHERE id = ?',
+                    [id],
+                    (err, existingRow: any) => {
+                        resolve(!err && existingRow);
+                    }
+                );
+            });
+
+            if (exists) {
+                console.log(`↪️ Agendamento ${id} já existe no banco. Atualizando...`);
+                
+                // Atualizar agendamento existente
+                await new Promise<void>((resolve, reject) => {
+                    db.run(
+                        `UPDATE bookings SET 
+                            city_id = ?,
+                            company_name = ?,
+                            vehicle_plate = ?,
+                            invoice_number = ?,
+                            driver_name = ?,
+                            booking_date = ?,
+                            booking_time = ?,
+                            status = ?,
+                            updated_at = ?
+                         WHERE id = ?`,
+                        [
+                            cityId, company_name, vehicle_plate, invoice_number,
+                            driver_name, booking_date, booking_time, 
+                            status || 'confirmed',
+                            new Date().toISOString(),
+                            id
+                        ],
+                        function(err) {
+                            if (err) {
+                                console.error(`❌ Erro ao atualizar agendamento ${id}:`, err);
+                                reject(err);
+                            } else {
+                                restoredCount++;
+                                resolve();
+                            }
+                        }
+                    );
+                });
+            } else {
+                // Inserir novo agendamento
+                await new Promise<void>((resolve, reject) => {
+                    db.run(
+                        `INSERT INTO bookings 
+                         (id, city_id, company_name, vehicle_plate, invoice_number, driver_name, 
+                          booking_date, booking_time, status, created_at, updated_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                        [
+                            id, cityId, company_name, vehicle_plate, invoice_number,
+                            driver_name, booking_date, booking_time, status || 'confirmed',
+                            created_at || new Date().toISOString(),
+                            new Date().toISOString()
+                        ],
+                        function(err) {
+                            if (err) {
+                                console.error(`❌ Erro ao restaurar agendamento ${id}:`, err);
+                                reject(err);
+                            } else {
+                                restoredCount++;
+                                resolve();
+                            }
+                        }
+                    );
+                });
+            }
+        }
+
+        console.log(`✅ ${restoredCount} agendamentos restaurados do Google Sheets (${skippedCount} pulados)`);
+    } catch (error) {
+        console.error('❌ Erro ao restaurar agendamentos:', error);
+        throw error;
+    }
+}
+
+// Função para restaurar indisponibilidades do Google Sheets
+async function restoreUnavailabilitiesFromSheets(sheetsService: GoogleSheetsService): Promise<void> {
+    try {
+        const sheets = sheetsService.sheets;
+        const spreadsheetId = sheetsService.config.spreadsheetId;
+        const sheetName = sheetsService.config.unavailabilitiesSheetName;
+
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: `${sheetName}!A2:F`, // Pula cabeçalho
+        });
+
+        if (!response.data.values || response.data.values.length === 0) {
+            console.log('📭 Nenhuma indisponibilidade encontrada no Google Sheets');
+            return;
+        }
+
+        console.log(`📥 Encontradas ${response.data.values.length} indisponibilidades no Sheets`);
+        
+        let restoredCount = 0;
+        let skippedCount = 0;
+        
+        for (const row of response.data.values) {
+            // Formato: [Cidade ID, Cidade, Data Indisponível, Horário, Motivo, Data Registro]
+            const [city_id, city_name, unavailable_date, unavailable_time, reason, created_at] = row;
+
+            if (!city_id || !unavailable_date) {
+                skippedCount++;
+                continue;
+            }
+
+            // Verificar se a indisponibilidade já existe
+            const exists = await new Promise<boolean>((resolve) => {
+                db.get(
+                    'SELECT id FROM unavailabilities WHERE city_id = ? AND unavailable_date = ?',
+                    [city_id, unavailable_date],
+                    (err, existingRow: any) => {
+                        resolve(!err && existingRow);
+                    }
+                );
+            });
+
+            if (exists) {
+                // Atualizar indisponibilidade existente
+                await new Promise<void>((resolve, reject) => {
+                    db.run(
+                        `UPDATE unavailabilities SET 
+                            unavailable_time = ?,
+                            reason = ?,
+                            created_at = ?
+                         WHERE city_id = ? AND unavailable_date = ?`,
+                        [
+                            unavailable_time || null, 
+                            reason || 'Restaurado do Google Sheets',
+                            created_at || new Date().toISOString(),
+                            city_id, 
+                            unavailable_date
+                        ],
+                        function(err) {
+                            if (err) {
+                                console.error(`❌ Erro ao atualizar indisponibilidade:`, err);
+                                reject(err);
+                            } else {
+                                restoredCount++;
+                                resolve();
+                            }
+                        }
+                    );
+                });
+            } else {
+                // Inserir nova indisponibilidade
+                await new Promise<void>((resolve, reject) => {
+                    db.run(
+                        `INSERT INTO unavailabilities 
+                         (city_id, unavailable_date, unavailable_time, reason, created_at)
+                         VALUES (?, ?, ?, ?, ?)`,
+                        [
+                            city_id, unavailable_date, unavailable_time || null, 
+                            reason || 'Restaurado do Google Sheets',
+                            created_at || new Date().toISOString()
+                        ],
+                        function(err) {
+                            if (err) {
+                                console.error(`❌ Erro ao restaurar indisponibilidade:`, err);
+                                reject(err);
+                            } else {
+                                restoredCount++;
+                                resolve();
+                            }
+                        }
+                    );
+                });
+            }
+        }
+
+        console.log(`✅ ${restoredCount} indisponibilidades restauradas do Google Sheets (${skippedCount} puladas)`);
+    } catch (error) {
+        console.error('❌ Erro ao restaurar indisponibilidades:', error);
+        throw error;
+    }
+}
+
+// Função principal para restaurar do Google Sheets
+export async function restoreFromGoogleSheets(sheetsService: GoogleSheetsService | null): Promise<void> {
+    return new Promise((resolve, reject) => {
+        if (!sheetsService) {
+            console.log('⚠️  Google Sheets não disponível para restauração');
+            resolve();
+            return;
+        }
+
+        console.log('🔄 Verificando se precisa restaurar do Google Sheets...');
+        
+        // Verificar se o banco tem agendamentos
+        db.all('SELECT COUNT(*) as count FROM bookings', [], async (err, rows: any[]) => {
+            if (err) {
+                console.error('❌ Erro ao verificar banco:', err);
+                reject(err);
+                return;
+            }
+
+            const count = rows[0].count;
+            
+            // Verificar se devemos restaurar (sempre restaurar para manter sincronizado)
+            const shouldRestore = process.env.ALWAYS_RESTORE_SHEETS === 'true' || count === 0;
+            
+            if (!shouldRestore && count > 0) {
+                console.log(`✅ Banco já tem ${count} agendamentos. Restauração não necessária.`);
+                resolve();
+                return;
+            }
+
+            if (count > 0) {
+                console.log(`🔄 Banco tem ${count} agendamentos, mas ALWAYS_RESTORE_SHEETS está ativo. Sincronizando...`);
+            } else {
+                console.log('📥 Banco vazio. Restaurando do Google Sheets...');
+            }
+            
+            try {
+                // Restaurar agendamentos
+                await restoreBookingsFromSheets(sheetsService);
+                
+                // Restaurar indisponibilidades
+                await restoreUnavailabilitiesFromSheets(sheetsService);
+                
+                console.log('✅ Restauração/sincronização do Google Sheets concluída');
+                resolve();
+            } catch (error) {
+                console.error('❌ Erro na restauração:', error);
+                reject(error);
+            }
+        });
+    });
+}
+
+// Função para forçar sincronização manual
+export async function forceSyncFromGoogleSheets(sheetsService: GoogleSheetsService | null): Promise<void> {
+    if (!sheetsService) {
+        throw new Error('Google Sheets não disponível');
+    }
+    
+    console.log('🔄 Forçando sincronização do Google Sheets...');
+    await restoreBookingsFromSheets(sheetsService);
+    await restoreUnavailabilitiesFromSheets(sheetsService);
+    console.log('✅ Sincronização forçada concluída');
+}
+
+// Exportar db e as funções
 export default db;
+export { restoreFromGoogleSheets, forceSyncFromGoogleSheets };

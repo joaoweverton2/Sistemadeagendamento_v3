@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import db from './database.js';
+import db, { restoreFromGoogleSheets, forceSyncFromGoogleSheets } from './database.js';
 import { initializeGoogleSheets } from './googleSheets.js';
 
 const app = express();
@@ -336,7 +336,148 @@ app.get('/api/cities', (_req: Request, res: Response) => {
 
 // GET /api/health - Health check
 app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({ 
+        status: 'ok', 
+        timestamp: new Date().toISOString(),
+        database: 'connected',
+        googleSheets: sheetsService ? 'connected' : 'disabled',
+        uptime: process.uptime()
+    });
+});
+
+// POST /api/admin/sync-sheets - Sincronizar manualmente com Google Sheets (PROTEGIDO)
+app.post('/api/admin/sync-sheets', (req: Request, res: Response) => {
+    const { admin_key } = req.body;
+    
+    // Chave de administração (configure no Render como ADMIN_SYNC_KEY)
+    const expectedKey = process.env.ADMIN_SYNC_KEY || 'admin-sync-123';
+    
+    if (admin_key !== expectedKey) {
+        return res.status(401).json({ 
+            error: 'Não autorizado',
+            message: 'Chave de administração inválida'
+        });
+    }
+    
+    if (!sheetsService) {
+        return res.status(400).json({ 
+            error: 'Google Sheets não configurado',
+            message: 'Configure as variáveis GOOGLE_SHEETS_SPREADSHEET_ID e GOOGLE_SHEETS_CREDENTIALS_PATH'
+        });
+    }
+    
+    console.log('🔄 Sincronização manual solicitada via API');
+    
+    forceSyncFromGoogleSheets(sheetsService)
+        .then(() => {
+            // Contar agendamentos após sincronização
+            db.all('SELECT COUNT(*) as count FROM bookings', [], (err, rows: any[]) => {
+                if (err) {
+                    res.json({ 
+                        message: 'Sincronização concluída, mas erro ao contar registros',
+                        error: err.message
+                    });
+                    return;
+                }
+                
+                res.json({ 
+                    message: 'Sincronização com Google Sheets concluída com sucesso',
+                    bookings_count: rows[0].count,
+                    timestamp: new Date().toISOString()
+                });
+            });
+        })
+        .catch(error => {
+            console.error('❌ Erro na sincronização manual:', error);
+            res.status(500).json({ 
+                error: 'Erro na sincronização',
+                message: error.message 
+            });
+        });
+});
+
+// POST /api/admin/backup - Criar backup manual (PROTEGIDO)
+app.post('/api/admin/backup', (req: Request, res: Response) => {
+    const { admin_key } = req.body;
+    
+    const expectedKey = process.env.ADMIN_SYNC_KEY || 'admin-sync-123';
+    
+    if (admin_key !== expectedKey) {
+        return res.status(401).json({ 
+            error: 'Não autorizado',
+            message: 'Chave de administração inválida'
+        });
+    }
+    
+    // Contar registros atuais
+    db.all(`
+        SELECT 
+            (SELECT COUNT(*) FROM bookings) as bookings_count,
+            (SELECT COUNT(*) FROM unavailabilities) as unavailabilities_count,
+            (SELECT COUNT(*) FROM cities) as cities_count
+    `, [], (err, rows: any[]) => {
+        if (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+        
+        const counts = rows[0];
+        
+        res.json({
+            message: 'Backup manual solicitado',
+            backup_type: 'database_snapshot',
+            timestamp: new Date().toISOString(),
+            counts: {
+                bookings: counts.bookings_count,
+                unavailabilities: counts.unavailabilities_count,
+                cities: counts.cities_count
+            },
+            google_sheets_status: sheetsService ? 'connected' : 'disabled',
+            note: 'Os dados já estão sincronizados com Google Sheets que serve como backup'
+        });
+    });
+});
+
+// GET /api/stats - Estatísticas do sistema
+app.get('/api/stats', (_req: Request, res: Response) => {
+    db.all(`
+        SELECT 
+            (SELECT COUNT(*) FROM bookings WHERE status = 'confirmed') as confirmed_bookings,
+            (SELECT COUNT(*) FROM bookings WHERE status = 'cancelled') as cancelled_bookings,
+            (SELECT COUNT(*) FROM unavailabilities) as unavailabilities_count,
+            (SELECT COUNT(*) FROM cities) as cities_count,
+            (SELECT COUNT(DISTINCT city_id) FROM bookings) as cities_with_bookings,
+            (SELECT COUNT(DISTINCT strftime('%Y-%m', booking_date)) FROM bookings) as months_with_bookings
+    `, [], (err, rows: any[]) => {
+        if (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+        
+        const stats = rows[0];
+        
+        res.json({
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            statistics: {
+                bookings: {
+                    total: (stats.confirmed_bookings || 0) + (stats.cancelled_bookings || 0),
+                    confirmed: stats.confirmed_bookings || 0,
+                    cancelled: stats.cancelled_bookings || 0
+                },
+                unavailabilities: stats.unavailabilities_count || 0,
+                cities: {
+                    total: stats.cities_count || 0,
+                    with_bookings: stats.cities_with_bookings || 0
+                },
+                activity_months: stats.months_with_bookings || 0
+            },
+            sync_status: {
+                google_sheets: sheetsService ? 'active' : 'disabled',
+                last_sync: 'on_startup'
+            }
+        });
+    });
 });
 
 // Rota para servir o frontend
@@ -344,16 +485,51 @@ app.get('*', (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
-// Iniciar servidor
-app.listen(PORT, () => {
-    console.log(`
-╔════════════════════════════════════════════════════════════╗
-║  🚀 Servidor de Agendamento de Mercadorias                ║
-║  Rodando em: http://localhost:${PORT}                      ║
-║  Banco de dados: SQLite                                    ║
-║  Google Sheets: Integrado                                  ║
-╚════════════════════════════════════════════════════════════╝
-    `);
-});
+// Função para inicializar com restauração
+async function initializeServer() {
+    try {
+        console.log('🚀 Iniciando servidor de agendamento...');
+        
+        // Se temos Google Sheets configurado, restaurar dados se necessário
+        if (sheetsService) {
+            console.log('🔄 Verificando sincronização com Google Sheets...');
+            try {
+                await restoreFromGoogleSheets(sheetsService);
+                console.log('✅ Sincronização com Google Sheets concluída');
+            } catch (error) {
+                console.error('⚠️  Falha na sincronização inicial, mas continuando...', error);
+                // Não impedir o servidor de iniciar por erro no Sheets
+            }
+        } else {
+            console.log('⚠️  Google Sheets não configurado. Sincronização desabilitada.');
+        }
+        
+        // Iniciar servidor
+        app.listen(PORT, () => {
+            console.log(`
+╔════════════════════════════════════════════════════════════════════════╗
+║  🚀 Servidor de Agendamento de Mercadorias                           ║
+║  Rodando em: http://localhost:${PORT}${PORT < 1000 ? ' ' : ''}               ║
+║  Banco de dados: SQLite                                               ║
+║  Google Sheets: ${sheetsService ? '✅ Sincronizado' : '❌ Desabilitado'}    ║
+║  Sincronização: ${sheetsService ? 'Bidirecional (inicialização)' : 'N/A'}  ║
+╚════════════════════════════════════════════════════════════════════════╝
+            `);
+            
+            // Log de estatísticas iniciais
+            db.all('SELECT COUNT(*) as count FROM bookings', [], (err, rows: any[]) => {
+                if (!err && rows) {
+                    console.log(`📊 Agendamentos no banco: ${rows[0].count}`);
+                }
+            });
+        });
+    } catch (error) {
+        console.error('❌ Erro crítico na inicialização do servidor:', error);
+        process.exit(1);
+    }
+}
+
+// Iniciar servidor com tratamento de erros
+initializeServer();
 
 export default app;
