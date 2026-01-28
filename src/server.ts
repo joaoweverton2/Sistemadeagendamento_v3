@@ -14,24 +14,34 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, '../public')));
 
+// Função helper para garantir que callbacks sempre retornem
+function handleDbCallback(callback: (err: any, result: any) => void) {
+    return function(err: any, result: any): void {
+        if (err) {
+            console.error('Database error:', err);
+        }
+        callback(err, result);
+    };
+}
+
 // GET /api/bookings - Listar todos os agendamentos
 app.get('/api/bookings', (_req: Request, res: Response) => {
     db.all(
         `SELECT b.*, c.name as city FROM bookings b 
          JOIN cities c ON b.city_id = c.id 
          ORDER BY b.booking_date DESC`,
-        (err: any, rows: any) => {
+        handleDbCallback((err: any, rows: any) => {
             if (err) {
                 res.status(500).json({ error: err.message });
                 return;
             }
             res.json(rows || []);
-        }
+        })
     );
 });
 
 // POST /api/bookings - Criar novo agendamento
-app.post('/api/bookings', (req: Request, res: Response): void => {
+app.post('/api/bookings', (req: Request, res: Response) => {
     const { city_id, company_name, vehicle_plate, invoice_number, driver_name, booking_date, booking_time } = req.body;
 
     if (!city_id || !company_name || !vehicle_plate || !invoice_number || !driver_name || !booking_date || !booking_time) {
@@ -50,8 +60,7 @@ app.post('/api/bookings', (req: Request, res: Response): void => {
             }
             
             const bookingId = this.lastID;
-            const responseData = { id: bookingId, status: 'confirmed' };
-            res.json(responseData);
+            res.json({ id: bookingId, status: 'confirmed' });
 
             // Sincronizar com Google Sheets se disponível
             if (sheetsService) {
@@ -60,11 +69,11 @@ app.post('/api/bookings', (req: Request, res: Response): void => {
                      JOIN cities c ON b.city_id = c.id 
                      WHERE b.id = ?`,
                     [bookingId],
-                    (err: any, row: any) => {
+                    handleDbCallback((err: any, row: any) => {
                         if (!err && row) {
                             sheetsService.appendBooking(row);
                         }
-                    }
+                    })
                 );
             }
         }
@@ -80,7 +89,7 @@ app.get('/api/bookings/:id', (req: Request, res: Response) => {
          JOIN cities c ON b.city_id = c.id 
          WHERE b.id = ?`,
         [id],
-        (err: any, row: any) => {
+        handleDbCallback((err: any, row: any) => {
             if (err) {
                 res.status(500).json({ error: err.message });
                 return;
@@ -92,7 +101,7 @@ app.get('/api/bookings/:id', (req: Request, res: Response) => {
             }
             
             res.json(row);
-        }
+        })
     );
 });
 
@@ -107,7 +116,7 @@ app.post('/api/bookings/:id/cancel', (req: Request, res: Response) => {
          JOIN cities c ON b.city_id = c.id 
          WHERE b.id = ?`,
         [id],
-        (err: any, booking: any) => {
+        handleDbCallback((err: any, booking: any) => {
             if (err) {
                 res.status(500).json({ error: err.message });
                 return;
@@ -139,7 +148,7 @@ app.post('/api/bookings/:id/cancel', (req: Request, res: Response) => {
                          JOIN cities c ON b.city_id = c.id 
                          WHERE b.id = ?`,
                         [id],
-                        (err: any, updatedBooking: any) => {
+                        handleDbCallback((err: any, updatedBooking: any) => {
                             if (!err && updatedBooking) {
                                 // Garantir que o status seja 'cancelled'
                                 updatedBooking.status = 'cancelled';
@@ -155,16 +164,16 @@ app.post('/api/bookings/:id/cancel', (req: Request, res: Response) => {
                                 reason: reason || 'Cancelado pelo fornecedor',
                                 status: 'cancelled'
                             });
-                        }
+                        })
                     );
                 }
             );
-        }
+        })
     );
 });
 
 // PUT /api/bookings/:id - Atualizar agendamento
-app.put('/api/bookings/:id', (req: Request, res: Response): void => {
+app.put('/api/bookings/:id', (req: Request, res: Response) => {
     const { id } = req.params;
     const { city_id, company_name, vehicle_plate, invoice_number, driver_name, booking_date, booking_time } = req.body;
 
@@ -172,7 +181,7 @@ app.put('/api/bookings/:id', (req: Request, res: Response): void => {
     db.get(
         `SELECT * FROM bookings WHERE id = ?`,
         [id],
-        (err: any, existingBooking: any) => {
+        handleDbCallback((err: any, existingBooking: any) => {
             if (err) {
                 res.status(500).json({ error: err.message });
                 return;
@@ -216,7 +225,7 @@ app.put('/api/bookings/:id', (req: Request, res: Response): void => {
                          JOIN cities c ON b.city_id = c.id 
                          WHERE b.id = ?`,
                         [id],
-                        (err: any, updatedBooking: any) => {
+                        handleDbCallback((err: any, updatedBooking: any) => {
                             if (err) {
                                 console.error('Erro ao buscar agendamento atualizado:', err);
                                 res.status(500).json({ error: err.message });
@@ -238,11 +247,11 @@ app.put('/api/bookings/:id', (req: Request, res: Response): void => {
                                     message: 'Agendamento atualizado com sucesso'
                                 });
                             }
-                        }
+                        })
                     );
                 }
             );
-        }
+        })
     );
 });
 
@@ -255,13 +264,13 @@ app.get('/api/cdl/unavailabilities/:city_id', (req: Request, res: Response) => {
          JOIN cities c ON u.city_id = c.id 
          WHERE u.city_id = ? ORDER BY u.unavailable_date DESC`,
         [city_id],
-        (err: any, rows: any) => {
+        handleDbCallback((err: any, rows: any) => {
             if (err) {
                 res.status(500).json({ error: err.message });
                 return;
             }
             res.json(rows || []);
-        }
+        })
     );
 });
 
@@ -284,7 +293,7 @@ app.post('/api/cdl/unavailability', (req: Request, res: Response) => {
     db.get(
         `SELECT name FROM cities WHERE id = ?`,
         [city_id],
-        (err: any, cityRow: any) => {
+        handleDbCallback((err: any, cityRow: any) => {
             if (err) {
                 res.status(500).json({ error: err.message });
                 return;
@@ -326,19 +335,19 @@ app.post('/api/cdl/unavailability', (req: Request, res: Response) => {
                     }
                 }
             );
-        }
+        })
     );
 });
 
 // GET /api/cities - Listar todas as cidades
 app.get('/api/cities', (_req: Request, res: Response) => {
-    db.all(`SELECT * FROM cities ORDER BY state, name`, (err: any, rows: any) => {
+    db.all(`SELECT * FROM cities ORDER BY state, name`, handleDbCallback((err: any, rows: any) => {
         if (err) {
             res.status(500).json({ error: err.message });
             return;
         }
         res.json(rows || []);
-    });
+    }));
 });
 
 // GET /api/health - Health check
@@ -353,7 +362,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 });
 
 // POST /api/admin/sync-sheets - Sincronizar manualmente com Google Sheets (PROTEGIDO)
-app.post('/api/admin/sync-sheets', (req: Request, res: Response): void => {
+app.post('/api/admin/sync-sheets', (req: Request, res: Response) => {
     const { admin_key } = req.body;
     
     // Chave de administração (configure no Render como ADMIN_SYNC_KEY)
@@ -380,7 +389,7 @@ app.post('/api/admin/sync-sheets', (req: Request, res: Response): void => {
     forceSyncFromGoogleSheets(sheetsService)
         .then(() => {
             // Contar agendamentos após sincronização
-            db.all('SELECT COUNT(*) as count FROM bookings', [], (err, rows: any[]) => {
+            db.all('SELECT COUNT(*) as count FROM bookings', [], handleDbCallback((err, rows: any[]) => {
                 if (err) {
                     res.json({ 
                         message: 'Sincronização concluída, mas erro ao contar registros',
@@ -394,7 +403,7 @@ app.post('/api/admin/sync-sheets', (req: Request, res: Response): void => {
                     bookings_count: rows[0].count,
                     timestamp: new Date().toISOString()
                 });
-            });
+            }));
         })
         .catch(error => {
             console.error('❌ Erro na sincronização manual:', error);
@@ -425,7 +434,7 @@ app.post('/api/admin/backup', (req: Request, res: Response) => {
             (SELECT COUNT(*) FROM bookings) as bookings_count,
             (SELECT COUNT(*) FROM unavailabilities) as unavailabilities_count,
             (SELECT COUNT(*) FROM cities) as cities_count
-    `, [], (err, rows: any[]) => {
+    `, [], handleDbCallback((err, rows: any[]) => {
         if (err) {
             res.status(500).json({ error: err.message });
             return;
@@ -445,7 +454,7 @@ app.post('/api/admin/backup', (req: Request, res: Response) => {
             google_sheets_status: sheetsService ? 'connected' : 'disabled',
             note: 'Os dados já estão sincronizados com Google Sheets que serve como backup'
         });
-    });
+    }));
 });
 
 // GET /api/stats - Estatísticas do sistema
@@ -458,7 +467,7 @@ app.get('/api/stats', (_req: Request, res: Response) => {
             (SELECT COUNT(*) FROM cities) as cities_count,
             (SELECT COUNT(DISTINCT city_id) FROM bookings) as cities_with_bookings,
             (SELECT COUNT(DISTINCT strftime('%Y-%m', booking_date)) FROM bookings) as months_with_bookings
-    `, [], (err, rows: any[]) => {
+    `, [], handleDbCallback((err, rows: any[]) => {
         if (err) {
             res.status(500).json({ error: err.message });
             return;
@@ -487,11 +496,11 @@ app.get('/api/stats', (_req: Request, res: Response) => {
                 last_sync: 'on_startup'
             }
         });
-    });
+    }));
 });
 
 // GET /api/admin/health-detailed - Health check detalhado (PROTEGIDO)
-app.get('/api/admin/health-detailed', (req: Request, res: Response): void => {
+app.get('/api/admin/health-detailed', (req: Request, res: Response) => {
     const { key } = req.query;
     
     const expectedKey = process.env.ADMIN_SYNC_KEY;
@@ -513,7 +522,7 @@ app.get('/api/admin/health-detailed', (req: Request, res: Response): void => {
     };
     
     // Verificar banco de dados
-    db.get('SELECT 1 as test', (err) => {
+    db.get('SELECT 1 as test', handleDbCallback((err) => {
         if (err) {
             healthChecks.database = 'error';
         } else {
@@ -537,7 +546,7 @@ app.get('/api/admin/health-detailed', (req: Request, res: Response): void => {
         
         healthChecks.api = 'ok';
         
-        const responseData = {
+        res.json({
             success: true,
             status: 'operational',
             timestamp: new Date().toISOString(),
@@ -548,10 +557,8 @@ app.get('/api/admin/health-detailed', (req: Request, res: Response): void => {
                 rss: Math.round(used.rss / 1024 / 1024) + 'MB',
                 ratio: Math.round(memoryRatio * 100) + '%'
             }
-        };
-        
-        res.json(responseData);
-    });
+        });
+    }));
 });
 
 // Rota para servir o frontend
@@ -594,11 +601,11 @@ async function initializeServer() {
             `);
             
             // Log de estatísticas iniciais
-            db.all('SELECT COUNT(*) as count FROM bookings', [], (err, rows: any[]) => {
+            db.all('SELECT COUNT(*) as count FROM bookings', [], handleDbCallback((err, rows: any[]) => {
                 if (!err && rows) {
                     console.log(`📊 Agendamentos no banco: ${rows[0].count}`);
                 }
-            });
+            }));
         });
     } catch (error) {
         console.error('❌ Erro crítico na inicialização do servidor:', error);
